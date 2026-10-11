@@ -137,7 +137,7 @@ def kb_main(lst, tasks, now=None):
     now = time.time() if now is None else now
     L = lst["id"]
     rows = task_buttons(tasks, "t", L)
-    rows.append([B("➕ افزودن", "add:%d" % L), B("⏰ یادآور", "rem:%d" % L), B("⚙️ بیشتر", "more:%d" % L)])
+    rows.append([B("➕ افزودن", "add:%d" % L), B("⏰", "rem:%d" % L), B("📚", "ls:%d" % L), B("⚙️", "more:%d" % L)])
     if lst["undo_at"] and now - lst["undo_at"] < UNDO_WINDOW:
         rows.append([B("↩️ واگرد: " + _short(lst["undo_label"] or "آخرین تغییر", 24), "undo:%d" % L)])
     return {"inline_keyboard": rows}
@@ -151,7 +151,8 @@ def kb_more(lst, chat_row):
         [B("👤 مسئول", "pk:%d:asg" % L), B("📅 موعد", "pk:%d:due" % L)],
         [B("🧹 پاک کردن انجام‌شده‌ها", "clr:%d" % L)],
         [B("🔓 باز کردن قفل" if lst["locked"] else "🔒 قفل", "lock:%d" % L), B("🏷 عنوان", "ttl:%d" % L)],
-        [B("🆕 لیست جدید", "nw:%d" % L)],
+        [B("🆕 لیست جدید", "newl:%d" % L), B("🗄 بایگانی لیست", "arc:%d" % L)],
+        [B("🗑 حذف این لیست", "dell:%d" % L)],
         [B("🌙 ساعت سکوت: %s" % quiet, "qt:%d" % L), B("🕰 ساعت‌های سکوت", "qh:%d" % L)],
         [B("🔄 به‌روزرسانی", "r:%d" % L), B("◀️ بازگشت", "bk:%d" % L)],
     ]}
@@ -204,7 +205,7 @@ TIME_PRESETS = [9 * 60, 13 * 60, 18 * 60, 21 * 60]
 def kb_rem(lst, rems, chat_row, bot_username, private=False):
     L = lst["id"]
     kinds = {r["kind"] for r in rems}
-    mode = dict(DUE_MODES).get(chat_row["due_mode"], "خاموش")
+    mode = dict(DUE_MODES).get(lst["due_mode"] or "both", "خاموش")
     quiet = "روشن" if chat_row["quiet_on"] else "خاموش"
     rows = [
         [B(("✓ " if "daily" in kinds else "") + "📅 هر روز", "rk:%d:daily" % L),
@@ -259,3 +260,47 @@ def deep_link(bot_username, chat_id):
 
 def kb_confirm(yes_data, no_data, yes="✅ بله", no="◀️ نه"):
     return {"inline_keyboard": [[B(yes, yes_data), B(no, no_data)]]}
+
+
+# ---------------------------------------------------------------- several lists
+def short_progress(tasks):
+    total, done = len(tasks), sum(1 for t in tasks if t["done"])
+    return done, total
+
+
+def kb_lists(lst, lists_with_tasks):
+    """📚 menu inside a list message: jump to another list, or create one."""
+    rows = []
+    for l, tasks in lists_with_tasks:
+        d, n = short_progress(tasks)
+        mark = "📍 " if l["id"] == lst["id"] else "📋 "
+        rows.append([B(_short("%s%s · %s/%s" % (mark, l["title"], fa(d), fa(n)), 34), "go:%d" % l["id"])])
+    rows.append([B("🆕 لیست جدید", "newl:%d" % lst["id"]), B("◀️ بازگشت", "bk:%d" % lst["id"])])
+    return {"inline_keyboard": rows}
+
+
+def index_text(lists_with_tasks, private=False, now=None):
+    lines = ["📚 *%s*" % ("لیست‌های من" if private else "لیست‌های گروه"), ""]
+    for i, (l, tasks) in enumerate(lists_with_tasks, 1):
+        d, n = short_progress(tasks)
+        pct = round(100 * d / n) if n else 0
+        bar = "▰" * round(5 * d / n) + "▱" * (5 - round(5 * d / n)) if n else "▱" * 5
+        lines.append("%s. %s — %s از %s (%s٪) %s%s" % (fa(i), md_escape(l["title"]), fa(d), fa(n), fa(pct), bar,
+                                                    "  🔒" if l["locked"] else ""))
+    lines += ["", "روی هر لیست بزنید تا پایین گفتگو بیاید.", "🕒 %s" % dates.fa_stamp(now if now is not None else time.time())]
+    return "\n".join(lines)
+
+
+def kb_index(lists_with_tasks):
+    rows = []
+    for l, tasks in lists_with_tasks:
+        d, n = short_progress(tasks)
+        rows.append([B(_short("📋 %s · %s/%s" % (l["title"], fa(d), fa(n)), 34), "go:%d" % l["id"])])
+    rows.append([B("🆕 لیست جدید", "newl:0")])
+    return {"inline_keyboard": rows}
+
+
+def kb_pick_list(lists, data_fmt):
+    rows = [[B(_short("📋 " + l["title"], 34), data_fmt % l["id"])] for l in lists]
+    rows.append([B("✖️ لغو", data_fmt % 0)])
+    return {"inline_keyboard": rows}

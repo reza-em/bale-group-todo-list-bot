@@ -21,24 +21,30 @@ WELCOME = """👋 سلام! من لیست کارهای گروه را نگه می
 
 HELP = """📋 *راهنمای لیست کارها*
 
-همه‌چیز با دکمه‌های زیر لیست سنجاق‌شده انجام می‌شود:
-⬜/✅ تیک زدن · ➕ افزودن (هر خط یک کار) · ⏰ یادآور · ⚙️ بیشتر (ویرایش، حذف، مسئول، موعد، قفل، عنوان، لیست جدید، ساعت سکوت)
+همه‌چیز با دکمه‌های زیر هر لیست انجام می‌شود:
+⬜/✅ تیک زدن · ➕ افزودن (هر خط یک کار) · ⏰ یادآور · 📚 لیست‌ها · ⚙️ بیشتر (ویرایش، حذف، مسئول، موعد، قفل، عنوان، لیست جدید، بایگانی/حذف لیست، ساعت سکوت)
 ↩️ واگرد تا ۲ دقیقه بعد از هر تغییر.
+
+*چند لیست:* ⚙️ ← «🆕 لیست جدید» (تا ۱۰ لیست). وقتی بیش از یک لیست دارید، پیام «📚 لیست‌ها» سنجاق می‌شود؛ روی هر لیست بزنید تا پایین گفتگو بیاید. هر لیست یادآور خودش را دارد.
+دستورهای عددی روی آخرین لیستی که با آن کار کرده‌اید اجرا می‌شوند؛ برای لیست دیگر اول عنوانش را بنویسید: «انجام شد خرید ۳».
 
 در متن کار:  «خرید نان @ali | فردا ۱۸»  ← مسئول و موعد
 
 *یادآور شخصی:* در منوی ⏰ دکمهٔ «🔔 فعال‌سازی یادآور شخصی» را بزنید و ربات را استارت کنید؛ کارهایتان در پیوی هم یادآوری می‌شود و همان‌جا تیک می‌زنید.
 
 *دستورهای متنی (اختیاری):*
-/list · /new · /add متن · /done ۱ ۳ · /undo ۲ · /del ۳ · /edit ۳ متن · /due ۳ فردا ۱۸ · /title عنوان · /import (ریپلای روی یک لیست) · /clear_done · /reset · /lock · /unlock · /remind
+/list · /lists · /new عنوان · /add متن · /done ۱ ۳ · /undo ۲ · /del ۳ · /edit ۳ متن · /due ۳ فردا ۱۸ · /title عنوان · /import (ریپلای روی یک لیست) · /clear_done · /reset · /lock · /unlock · /remind
 فارسی: «اضافه متن»، «انجام شد ۳»، «برگشت ۳»، «حذف ۳»، «لیست»"""
 
 HELP_PV = """👋 سلام! اینجا هم یک *لیست شخصی* دارید: هر متنی بفرستید (هر خط یک کار) به لیست اضافه می‌شود؛ با دکمه‌ها تیک بزنید.
+چند لیست هم می‌توانید بسازید: /new عنوان
 برای لیست گروهی، من را به گروه اضافه کنید.
 تنظیمات یادآور شخصی: /settings"""
 
 PIN_HINT = "📌 برای سنجاق کردن لیست، لطفاً من را در گروه *ادمین* کنید. لیست بدون سنجاق هم کار می‌کند 🙂"
 LOCKED_MSG = "🔒 لیست قفل است؛ فقط سازندهٔ لیست، کسی که قفلش کرده و ادمین‌ها می‌توانند تغییرش دهند."
+LIMIT_MSG = "حداکثر %s لیست فعال در هر گفتگو ممکن است؛ یکی را از ⚙️ بایگانی یا حذف کنید." % fa(db.MAX_ACTIVE)
+NEWLIST_PROMPT = "🆕 %s عنوان لیست تازه را بنویسید (مثلاً «🛒 خرید»):"
 ADD_PROMPT = "➕ %s کار(ها) رو بنویس، هر خط یک کار.\n(مسئول و موعد اختیاری: «خرید نان @ali | فردا ۱۸»)"
 
 
@@ -62,6 +68,19 @@ class TodoBot:
         self.api, self.username, self.clock = api, username, clock
         self._admin_cache = {}
         self.lock = threading.RLock()   # updates (main thread) and scheduler ticks never interleave
+        self._forced = None             # list chosen by title/target for the command being run
+
+    # ================================================================== which list?
+    def cur(self, chat):
+        """List a text command applies to: an explicitly targeted one, else the most recently used."""
+        return self._forced or db.active_list(chat["id"])
+
+    def cur_or_new(self, chat, user):
+        return self._forced or db.ensure_list(chat["id"], user.get("id"))
+
+    def label(self, lst):
+        """«title»: prefix for acks, only when the chat has several lists."""
+        return "«%s» " % lst["title"] if len(db.active_lists(lst["chat_id"])) > 1 else ""
 
     # ================================================================== transport helpers
     def call(self, method, **p):
@@ -153,7 +172,7 @@ class TodoBot:
     # ================================================================== list message
     def _render(self, lst):
         tasks = db.tasks(lst["id"])
-        return render.render_text(lst, tasks, now=self.clock(), rems=db.reminders(lst["chat_id"])), tasks
+        return render.render_text(lst, tasks, now=self.clock(), rems=db.list_reminders(lst["id"])), tasks
 
     def refresh(self, lst, repost=False, kb=None):
         """Edit the list message in place (optionally with a menu keyboard); send + pin a new one if needed."""
@@ -183,8 +202,87 @@ class TodoBot:
             db.set_list(lst["id"], message_id=new_mid)
             if repost and mid and mid != new_mid:
                 self.delete(lst["chat_id"], mid)
-            self.pin(lst["chat_id"], new_mid)
+            self.pin_for(lst, new_mid)
         return new_mid
+
+    # ================================================================== several lists: pin + index
+    def lists_with_tasks(self, chat_id):
+        return [(l, db.tasks(l["id"])) for l in db.active_lists(chat_id)]
+
+    def pin_for(self, lst, mid):
+        """One list -> pin the list itself. Several -> one pinned «📚» index (works whether or not Bale keeps
+        several pins, and does not re-pin on every tap)."""
+        if len(db.active_lists(lst["chat_id"])) >= 2:
+            self.ensure_index(lst["chat_id"])
+        else:
+            self.pin(lst["chat_id"], mid)
+
+    def ensure_index(self, chat_id, repost=False):
+        lw = self.lists_with_tasks(chat_id)
+        c = db.chat(chat_id)
+        text = render.index_text(lw, private=c["type"] == "private", now=self.clock())
+        kb = render.kb_index(lw)
+        mid = c["index_mid"]
+        if mid and not repost:
+            try:
+                self.call("editMessageText", chat_id=chat_id, message_id=mid, text=text, reply_markup=kb)
+                return mid
+            except NetError:
+                return mid
+            except ApiError as e:
+                if "not modified" in e.desc.lower():
+                    return mid
+        res = self.safe_send(chat_id, text, markup=kb)
+        new_mid = (res or {}).get("message_id")
+        if not new_mid:
+            return mid
+        db.set_chat(chat_id, index_mid=new_mid)
+        if mid and mid != new_mid:
+            self.delete(chat_id, mid)
+        if len(lw) >= 2:
+            for l, _t in lw:      # the index replaces the single-list pin (ignored if Bale keeps one pin only)
+                if l["message_id"]:
+                    try:
+                        self.call("unpinChatMessage", chat_id=chat_id, message_id=l["message_id"])
+                        db.kv_set("cap.unpinChatMessage", "ok")
+                    except (ApiError, NetError) as e:
+                        db.kv_set("cap.unpinChatMessage", "fail: %s" % e)
+            self.pin(chat_id, new_mid)
+        return new_mid
+
+    def update_index(self, chat_id):
+        lists = db.active_lists(chat_id)
+        c = db.chat(chat_id)
+        if len(lists) >= 2:
+            self.ensure_index(chat_id)
+        elif c["index_mid"]:          # back to a single list: drop the index, pin the list again
+            if not self.delete(chat_id, c["index_mid"]):
+                try:
+                    self.call("unpinChatMessage", chat_id=chat_id, message_id=c["index_mid"])
+                except (ApiError, NetError):
+                    pass
+            db.set_chat(chat_id, index_mid=None)
+            if lists and lists[0]["message_id"]:
+                self.pin(chat_id, lists[0]["message_id"])
+
+    def new_list(self, chat, user, title=None):
+        if len(db.active_lists(chat["id"])) >= db.MAX_ACTIVE:
+            return None
+        lst = db.create_list(chat["id"], user.get("id"), title, now=self.clock())
+        self.refresh(lst)
+        return lst
+
+    def close_list(self, lst, delete=False):
+        chat_id = lst["chat_id"]
+        if delete:
+            if not self.delete(chat_id, lst["message_id"]):
+                self._edit_plain(chat_id, {"message_id": lst["message_id"]}, "🗑 این لیست حذف شد.")
+            db.delete_list(lst["id"])
+        else:
+            text, _ = self._render(lst)
+            self._edit_plain(chat_id, {"message_id": lst["message_id"]}, text + "\n📦 بایگانی شد")
+            db.archive_list(lst["id"])
+        self.update_index(chat_id)
 
     def pin(self, chat_id, mid):
         try:
@@ -206,6 +304,7 @@ class TodoBot:
     def mutate(self, lst, label, fn):
         """Run a change with a whole-list snapshot so «↩️ واگرد» can restore it."""
         snap = db.snapshot(lst["id"])
+        db.use_list(lst["id"], self.clock())
         result = fn()
         db.set_list(lst["id"], undo_json=json.dumps(snap, ensure_ascii=False), undo_at=self.clock(),
                     undo_label=label, undo_shown=1, updated_at=self.clock())
@@ -222,6 +321,7 @@ class TodoBot:
             self.safe_send(lst["chat_id"], "🎉 آفرین! همهٔ %s کار انجام شد. خسته نباشید! 👏" % fa(len(tasks)))
         elif not all_done and lst["celebrated"]:
             db.set_list(lst["id"], celebrated=0)
+        self.update_index(lst["chat_id"])
 
     # ================================================================== task helpers
     def add_items(self, lst, lines, user, done_flags=None):
@@ -308,6 +408,16 @@ class TodoBot:
 
     def handle_prompt(self, p, msg):
         chat, user, text = msg["chat"], msg.get("from") or {}, (msg.get("text") or "").strip()
+        if p["kind"] == "newlist":
+            if not text:
+                return
+            if self.new_list(chat, user, text.replace("\n", " ")[:100]) is None:
+                self.ack(msg, LIMIT_MSG)
+            db.drop_prompt(chat["id"], p["message_id"])
+            self.delete(chat["id"], p["message_id"])
+            if is_group(chat):
+                self.delete(chat["id"], msg.get("message_id"))
+            return
         lst = db.get_list(p["list_id"]) if p["list_id"] else None
         if lst and not lst["active"]:
             lst = db.active_list(chat["id"])
@@ -387,7 +497,47 @@ class TodoBot:
                 return
         name, arg = cmd
         log.info("cmd %s in %s chat", name, chat.get("type"))
-        return getattr(self, "cmd_" + name)(msg, chat, user, arg, reply)
+        slash = text.lstrip().startswith("/")
+        target, arg = self.resolve_target(msg, chat, user, name, arg, slash)
+        if target is False:
+            return
+        return self.run_cmd(name, msg, chat, user, arg, reply, target)
+
+    def run_cmd(self, name, msg, chat, user, arg, reply, target=None):
+        self._forced = target
+        try:
+            return getattr(self, "cmd_" + name)(msg, chat, user, arg, reply)
+        finally:
+            self._forced = None
+
+    TARGETABLE = ("done", "undo", "del", "edit", "due")
+
+    @staticmethod
+    def title_key(s):
+        return re.sub(r"^[\W_]+", "", parse.norm(s or "").lower()).strip()
+
+    def resolve_target(self, msg, chat, user, name, arg, slash):
+        """«انجام شد خرید 3»: a title prefix before the numbers picks the list. Returns (list|None, arg) or
+        (False, None) when the bot asked which list (or the message was just chatter)."""
+        lists = db.active_lists(chat["id"])
+        if name not in self.TARGETABLE or len(lists) < 2:
+            return None, arg
+        m = re.match(r"^([^\d۰-۹٠-٩#]+?)\s+([#\d۰-۹٠-٩].*)$", (arg or "").strip(), re.S)
+        if not m:
+            return None, arg                       # numbers only -> most recently used list
+        key = self.title_key(m.group(1))
+        hits = [l for l in lists if key and self.title_key(l["title"]).startswith(key)]
+        if len(hits) == 1:
+            return hits[0], m.group(2)
+        if not hits and not slash:
+            return False, None                     # «انجام شد دیگه 2 تا» etc. is chatter, not a command
+        res = self.safe_send(chat["id"], "📚 کدام لیست؟", reply_to=msg.get("message_id"),
+                             markup=render.kb_pick_list(hits or lists, "tg:%d"))
+        if res and res.get("message_id"):
+            db.add_prompt(chat["id"], res["message_id"], "target", None, None, user.get("id"),
+                          json.dumps({"name": name, "arg": m.group(2)}, ensure_ascii=False), self.clock())
+            db.schedule_delete(chat["id"], res["message_id"], self.clock() + 300)
+        return False, None
 
     def welcome(self, chat):
         if chat.get("type") == "private":
@@ -441,40 +591,35 @@ class TodoBot:
 
     def cmd_settings(self, msg, chat, user, arg, reply):
         if chat.get("type") != "private":
-            lst = db.ensure_list(chat["id"], user.get("id"))
+            lst = self.cur_or_new(chat, user)
             return self.refresh(lst, kb=render.kb_more(lst, db.chat(chat["id"])))
         self.safe_send(chat["id"], self.user_settings_text(user["id"]), markup=self.kb_user(user["id"]))
 
     def cmd_remind(self, msg, chat, user, arg, reply):
-        lst = db.ensure_list(chat["id"], user.get("id"))
+        lst = self.cur_or_new(chat, user)
         self.refresh(lst, kb=self.kb_rem(lst))
 
     def cmd_list(self, msg, chat, user, arg, reply):
-        self.refresh(db.ensure_list(chat["id"], user.get("id")), repost=True)
+        self.refresh(self.cur_or_new(chat, user), repost=True)
 
-    def new_list(self, chat, user, title=None):
-        old = db.active_list(chat["id"])
-        if old and not db.tasks(old["id"]) and not title:
-            return self.refresh(old, repost=not old["message_id"])
-        if old and old["message_id"]:   # freeze the old message: final text, no buttons
-            text, _ = self._render(old)
-            try:
-                self.call("editMessageText", chat_id=chat["id"], message_id=old["message_id"], text=text + "\n📦 بایگانی شد")
-            except (ApiError, NetError):
-                pass
-        return self.refresh(db.create_list(chat["id"], user.get("id"), title))
+    def cmd_lists(self, msg, chat, user, arg, reply):
+        if not db.active_lists(chat["id"]):
+            db.ensure_list(chat["id"], user.get("id"))
+        self.ensure_index(chat["id"], repost=True)
 
     def cmd_new(self, msg, chat, user, arg, reply):
-        old = db.active_list(chat["id"])
-        if old and db.tasks(old["id"]) and not self._guard(old, chat, user, msg):
-            return
-        self.new_list(chat, user, arg.strip()[:100] if arg and arg.strip() else None)
+        if len(db.active_lists(chat["id"])) >= db.MAX_ACTIVE:
+            return self.ack(msg, LIMIT_MSG)
+        title = arg.strip().replace("\n", " ")[:100] if arg and arg.strip() else None
+        if not title:
+            return self.ask(chat, user, "newlist", None, text=NEWLIST_PROMPT)
+        self.new_list(chat, user, title)
 
     def cmd_add(self, msg, chat, user, arg, reply):
         lines = parse.parse_add_lines(arg)
         if not lines and reply:
             return self.cmd_import(msg, chat, user, arg, reply)
-        lst = db.ensure_list(chat["id"], user.get("id"))
+        lst = self.cur_or_new(chat, user)
         if not lines:
             return self.ask(chat, user, "add", lst)
         if not self._guard(lst, chat, user, msg):
@@ -489,7 +634,7 @@ class TodoBot:
         items = parse.parse_import(src)
         if not items:
             return self.ack(msg, "📥 روی پیامی که لیست کارها در آن است ریپلای کنید و /import بفرستید (هر خط یک کار).")
-        lst = db.ensure_list(chat["id"], user.get("id"))
+        lst = self.cur_or_new(chat, user)
         if not self._guard(lst, chat, user, msg):
             return
         self.add_items(lst, [t for t, _d in items], user, [d for _t, d in items])
@@ -509,7 +654,7 @@ class TodoBot:
         return nums
 
     def _active_nonempty(self, msg, chat):
-        lst = db.active_list(chat["id"])
+        lst = self.cur(chat)
         if not lst or not db.tasks(lst["id"]):
             self.ack(msg, "📋 لیست خالی است. «➕ افزودن» را بزنید یا /add بنویسید.")
             return None
@@ -532,9 +677,10 @@ class TodoBot:
         self.mutate(lst, ("تیک " if done else "برداشتن تیک ") + fa_list(nums), go)
         tasks = db.tasks(lst["id"])
         if done:
-            self.ack(msg, "✅ %s (%s از %s)" % (fa_list(nums), fa(sum(t["done"] for t in tasks)), fa(len(tasks))))
+            self.ack(msg, "✅ %s%s (%s از %s)" % (self.label(lst), fa_list(nums), fa(sum(t["done"] for t in tasks)),
+                                                fa(len(tasks))))
         else:
-            self.ack(msg, "↩️ تیک %s برداشته شد." % fa_list(nums))
+            self.ack(msg, "↩️ %sتیک %s برداشته شد." % (self.label(lst), fa_list(nums)))
 
     def cmd_done(self, msg, chat, user, arg, reply):
         self._set_done(msg, chat, user, arg, True)
@@ -551,13 +697,13 @@ class TodoBot:
             return
         ids = [db.task_by_num(lst["id"], n)["id"] for n in nums]
         self.mutate(lst, "حذف " + fa_list(nums), lambda: [db.del_task(i) for i in ids])
-        self.ack(msg, "🗑 %s حذف شد." % fa_list(nums))
+        self.ack(msg, "🗑 %s%s حذف شد." % (self.label(lst), fa_list(nums)))
 
     def cmd_edit(self, msg, chat, user, arg, reply):
         n, text = parse.split_num_text(arg)
         if not n or not text:
             return self.ack(msg, "مثال: /edit ۳ متن جدید")
-        lst = db.active_list(chat["id"])
+        lst = self.cur(chat)
         t = db.task_by_num(lst["id"], n) if lst else None
         if not t:
             return self.ack(msg, "⚠️ کار شمارهٔ %s پیدا نشد." % fa(n))
@@ -568,7 +714,7 @@ class TodoBot:
 
     def cmd_due(self, msg, chat, user, arg, reply):
         n, text = parse.split_num_text(arg)
-        lst = db.active_list(chat["id"])
+        lst = self.cur(chat)
         t = db.task_by_num(lst["id"], n) if (lst and n) else None
         if not t:
             return self.ack(msg, "مثال: /due ۳ فردا ۱۸  (یا «/due ۳ حذف» برای برداشتن موعد)")
@@ -584,7 +730,7 @@ class TodoBot:
         self.ack(msg, "⏰ موعد کار %s: %s" % (fa(n), dates.fmt_due(due[0], due[1], self.clock())))
 
     def cmd_title(self, msg, chat, user, arg, reply):
-        lst = db.ensure_list(chat["id"], user.get("id"))
+        lst = self.cur_or_new(chat, user)
         if not arg.strip():
             return self.ask(chat, user, "title", lst, text="🏷 %s عنوان تازهٔ لیست را بنویسید.")
         if not self._guard(lst, chat, user, msg):
@@ -593,7 +739,7 @@ class TodoBot:
         self.ack(msg, "🏷 عنوان لیست عوض شد.")
 
     def cmd_clear_done(self, msg, chat, user, arg, reply):
-        lst = db.active_list(chat["id"])
+        lst = self.cur(chat)
         if not lst:
             return self.ack(msg, "📋 لیستی وجود ندارد.")
         if not self._guard(lst, chat, user, msg):
@@ -610,7 +756,7 @@ class TodoBot:
                        markup=render.kb_confirm("rs:%d:y" % lst["id"], "rs:%d:n" % lst["id"], "✅ بله، پاک کن", "❌ نه"))
 
     def _set_lock(self, chat, user, locked, lst=None):
-        lst = lst or db.ensure_list(chat["id"], user.get("id"))
+        lst = lst or self.cur_or_new(chat, user)
         if not self.can_admin(lst, chat, user.get("id")):
             return False
         self.mutate(lst, "قفل" if locked else "باز کردن قفل",
@@ -629,10 +775,10 @@ class TodoBot:
         ok = self._set_lock(chat, user, False)
         self.ack(msg, "🔓 قفل باز شد." if ok else "فقط ادمین‌ها، سازندهٔ لیست یا کسی که قفل کرده می‌تواند باز کند.")
 
-    # ================================================================== reminders: setup
+    # ================================================================== reminders: setup (per list)
     def kb_rem(self, lst):
         c = db.chat(lst["chat_id"])
-        return render.kb_rem(lst, db.reminders(lst["chat_id"]), c, self.username, private=c["type"] == "private")
+        return render.kb_rem(lst, db.list_reminders(lst["id"]), c, self.username, private=c["type"] == "private")
 
     def schedule_next(self, chat_id, kind, minute, after):
         nxt = dates.next_daily(after, minute, dates.WORK_DAYS if kind == "work" else None)
@@ -642,20 +788,20 @@ class TodoBot:
         return nxt
 
     def toggle_daily(self, lst, kind, minute, user):
-        rows = [r for r in db.reminders(lst["chat_id"]) if r["kind"] == kind and r["minute"] == minute]
+        rows = [r for r in db.list_reminders(lst["id"]) if r["kind"] == kind and r["minute"] == minute]
         if rows:
             for r in rows:
                 db.x("UPDATE reminders SET active=0 WHERE id=?", (r["id"],))
             return False
         db.add_reminder(lst["chat_id"], kind, minute, self.schedule_next(lst["chat_id"], kind, minute, self.clock()),
-                        user.get("id"))
+                        user.get("id"), lst["id"])
         return True
 
     def add_once(self, lst, ts, user):
         c = db.chat(lst["chat_id"])
         if c["quiet_on"]:
             ts = dates.quiet_end(ts, c["quiet_start"], c["quiet_end"])
-        db.add_reminder(lst["chat_id"], "once", None, ts, user.get("id"))
+        db.add_reminder(lst["chat_id"], "once", None, ts, user.get("id"), lst["id"])
         return ts
 
     def add_reminder_from_text(self, lst, kind, text, user, msg):
@@ -675,13 +821,13 @@ class TodoBot:
                 self.ack(msg, "🤔 ساعت را به شکل «۱۸» یا «۱۸:۳۰» بنویسید.", ttl=20)
                 return False
             minute = int(m.group(1)) * 60 + int(m.group(2) or 0)
-            if not [r for r in db.reminders(lst["chat_id"]) if r["kind"] == kind and r["minute"] == minute]:
+            if not [r for r in db.list_reminders(lst["id"]) if r["kind"] == kind and r["minute"] == minute]:
                 self.toggle_daily(lst, kind, minute, user)
         self.refresh(lst, kb=self.kb_rem(lst))
         return True
 
     def reschedule_chat(self, chat_id):
-        """Quiet-hours change: recompute next_at of recurring reminders."""
+        """Quiet-hours change (group-level): recompute next_at of every recurring reminder in the chat."""
         for r in db.reminders(chat_id):
             if r["kind"] != "once":
                 db.x("UPDATE reminders SET next_at=? WHERE id=?",
@@ -692,33 +838,45 @@ class TodoBot:
         return [(i, t) for i, t in enumerate(db.tasks(lst["id"]), 1) if not t["done"]]
 
     def fire_reminder(self, chat_id, now):
-        """Post the summary in the chat and queue a DM for every member who started the bot."""
-        lst = db.active_list(chat_id)
-        if not lst:
-            return False
-        rem = self.remaining(lst)
-        if not rem:
+        """All active lists of the chat (used by tests / manual triggers)."""
+        return self.fire_reminders(chat_id, [l["id"] for l in db.active_lists(chat_id)], now)
+
+    def fire_reminders(self, chat_id, list_ids, now):
+        """One post for the lists whose reminders fire together (combined when several), then queue DMs."""
+        lists = [l for l in (db.get_list(i) for i in dict.fromkeys(list_ids)) if l and l["active"]]
+        sections = [(l, self.remaining(l)) for l in lists]
+        sections = [(l, r) for l, r in sections if r]
+        if not sections:
             return False
         c = db.chat(chat_id)
         group = c["type"] in ("group", "supergroup")
-        lines = ["⏰ *یادآوری* — %s" % render.md_escape(lst["title"]), ""]
-        lines += [render.task_line(i, t, now) for i, t in rem[:15]]
-        if len(rem) > 15:
-            lines.append("… و %s کار دیگر" % fa(len(rem) - 15))
-        lines += ["", "باقی‌مانده: %s از %s" % (fa(len(rem)), fa(len(db.tasks(lst["id"]))))]
+        if len(sections) == 1:
+            l, rem = sections[0]
+            lines = ["⏰ *یادآوری* — %s" % render.md_escape(l["title"]), ""]
+            lines += [render.task_line(i, t, now) for i, t in rem[:15]]
+            if len(rem) > 15:
+                lines.append("… و %s کار دیگر" % fa(len(rem) - 15))
+            lines += ["", "باقی‌مانده: %s از %s" % (fa(len(rem)), fa(len(db.tasks(l["id"]))))]
+        else:
+            lines = ["⏰ *یادآوری*"]
+            for l, rem in sections:
+                lines += ["", "📋 *%s* (%s کار باز)" % (render.md_escape(l["title"]), fa(len(rem)))]
+                lines += [render.task_line(i, t, now) for i, t in rem[:10]]
+                if len(rem) > 10:
+                    lines.append("… و %s کار دیگر" % fa(len(rem) - 10))
         markup = None
         if group:
             today = dates.now_dt(now).strftime("%Y-%m-%d")
             missing = [m for m in db.members(chat_id) if not m["dm_ok"]]
             if missing and c["nostart_day"] != today:
                 db.set_chat(chat_id, nostart_day=today)
-                lines.append("🔕 یادآور شخصی ندارند: " + "، ".join(render.md_escape(m["name"] or "?") for m in missing[:10]))
+                lines += ["", "🔕 یادآور شخصی ندارند: " + "، ".join(render.md_escape(m["name"] or "?") for m in missing[:10])]
             if self.username:
                 markup = {"inline_keyboard": [[{"text": "🔔 فعال‌سازی یادآور شخصی",
                                                 "url": render.deep_link(self.username, chat_id)}]]}
         self.safe_send(chat_id, "\n".join(lines), markup=markup)
         if group:
-            self.queue_member_dms(lst, c, now)
+            self.queue_member_dms([l for l, _r in sections], c, now)
         return True
 
     def tasks_for_user(self, lst, u):
@@ -731,33 +889,46 @@ class TodoBot:
                 free.append((i, t))
         return mine, free
 
-    def dm_payload(self, lst, c, u, now, head="⏰ یادآوری"):
-        mine, free = self.tasks_for_user(lst, u)
-        if not mine and not free:
+    def dm_payload(self, lists, c, u, now, head="⏰ یادآوری"):
+        """DM for one member: their tasks + unassigned ones, grouped by list; ✅ buttons tick the right list."""
+        if isinstance(lists, dict) or hasattr(lists, "keys"):
+            lists = [lists]
+        parts = [(l, *self.tasks_for_user(l, u)) for l in lists]
+        parts = [(l, mine, free) for l, mine, free in parts if mine or free]
+        if not parts:
             return None, None
-        lines = ["%s از «%s» — %s" % (head, render.md_escape(c["title"] or "گروه"), render.md_escape(lst["title"])), ""]
-        if mine:
-            lines.append("👤 *کارهای شما:*")
-            lines += [render.task_line(i, t, now) for i, t in mine]
-        if free:
-            lines += ["", "📋 کارهای بی‌مسئول:"]
-            lines += [render.task_line(i, t, now) for i, t in free[:10]]
-            if len(free) > 10:
-                lines.append("… و %s کار دیگر" % fa(len(free) - 10))
-        rows = [[render.B(render._short("✅ %s. %s" % (fa(i), t["text"]), 32), "dt:%d" % t["id"])]
-                for i, t in (mine + free)[:8]]
+        multi = len(parts) > 1
+        lines = ["%s از «%s»%s" % (head, render.md_escape(c["title"] or "گروه"),
+                                   "" if multi else " — " + render.md_escape(parts[0][0]["title"]))]
+        buttons = []
+        for l, mine, free in parts:
+            lines.append("")
+            if multi:
+                lines.append("📋 *%s*" % render.md_escape(l["title"]))
+            if mine:
+                lines.append("👤 کارهای شما:")
+                lines += [render.task_line(i, t, now) for i, t in mine]
+            if free:
+                lines.append("بی‌مسئول:")
+                lines += [render.task_line(i, t, now) for i, t in free[:10]]
+                if len(free) > 10:
+                    lines.append("… و %s کار دیگر" % fa(len(free) - 10))
+            pre = (render._short(l["title"], 10) + " ") if multi else ""
+            buttons += [(pre, i, t) for i, t in mine + free]
+        rows = [[render.B(render._short("✅ %s%s. %s" % (pre, fa(i), t["text"]), 34), "dt:%d" % t["id"])]
+                for pre, i, t in buttons[:8]]
         rows.append([render.B("🔕 قطع یادآورها", "um"), render.B("⚙️ تنظیمات", "uset")])
         return "\n".join(lines), {"inline_keyboard": rows}
 
     def dm_not_before(self, u, now):
         return dates.quiet_end(now, u["quiet_start"], u["quiet_end"]) if u["quiet_on"] else now
 
-    def queue_member_dms(self, lst, c, now):
+    def queue_member_dms(self, lists, c, now):
         n = 0
         for u in db.members(c["chat_id"]):
             if not u["dm_ok"] or u["muted"]:
                 continue
-            text, kb = self.dm_payload(lst, c, u, now)
+            text, kb = self.dm_payload(lists, c, u, now)
             if text:
                 db.queue_dm(u["user_id"], c["chat_id"], text, kb, self.dm_not_before(u, now), now)
                 n += 1
@@ -784,7 +955,8 @@ class TodoBot:
         """One scheduler pass. Safe to call often; every send is guarded by a claim (no duplicates)."""
         now = self.clock() if now is None else now
         with self.lock:
-            # 1) scheduled reminders: compare-and-set on next_at
+            # 1) scheduled reminders: compare-and-set on next_at; lists firing together share one post
+            fire = {}
             for r in db.due_reminders(now):
                 nxt = None if r["kind"] == "once" else self.schedule_next(
                     r["chat_id"], r["kind"], r["minute"], max(now, r["next_at"]))
@@ -793,20 +965,24 @@ class TodoBot:
                 if now - r["next_at"] > STALE:
                     log.info("reminder %s skipped (late by %ds)", r["id"], now - r["next_at"])
                     continue
+                lid = r["list_id"] or (db.active_list(r["chat_id"]) or {"id": None})["id"]
+                if lid:
+                    fire.setdefault(r["chat_id"], []).append(lid)
+            for chat_id, lids in fire.items():
                 try:
-                    self.fire_reminder(r["chat_id"], now)
+                    self.fire_reminders(chat_id, lids, now)
                 except Exception:
-                    log.exception("reminder %s failed", r["id"])
+                    log.exception("reminders for %s failed", chat_id)
             # 2) per-task due reminders (claim row per task/kind/due)
-            rows = db.q("SELECT t.*, l.chat_id AS l_chat FROM tasks t JOIN lists l ON l.id=t.list_id "
-                        "WHERE l.active=1 AND t.done=0 AND t.due_at IS NOT NULL")
+            rows = db.q("SELECT t.*, l.chat_id AS l_chat, COALESCE(l.due_mode,'both') AS l_mode FROM tasks t "
+                        "JOIN lists l ON l.id=t.list_id WHERE l.active=1 AND t.done=0 AND t.due_at IS NOT NULL")
             for t in rows:
                 c = db.chat(t["l_chat"])
-                if c["due_mode"] == "off":
+                if t["l_mode"] == "off":
                     continue
                 eff = dates.due_effective(t["due_at"], t["due_has_time"])
                 points = [("due", eff)]
-                if c["due_mode"] == "both" and t["due_has_time"]:
+                if t["l_mode"] == "both" and t["due_has_time"]:
                     points.insert(0, ("pre", eff - 3600))
                 for kind, p in points:
                     if now < p or (kind == "pre" and now >= eff) or now - p > DUE_GRACE:
@@ -865,8 +1041,8 @@ class TodoBot:
         ]}
 
     # ================================================================== buttons
-    NEED_MOD = {"t", "add", "pedit", "pdel", "as", "du", "clr", "ttl", "nwy", "undo", "rt", "ro", "rw",
-                "dm", "roff", "qt", "qs", "rs"}
+    NEED_MOD = {"t", "add", "pedit", "pdel", "as", "du", "clr", "ttl", "undo", "rt", "ro", "rw",
+                "dm", "roff", "qt", "qs", "rs", "arc", "arcy", "dell", "dely"}
 
     def on_callback(self, cb):
         data = cb.get("data") or ""
@@ -890,6 +1066,10 @@ class TodoBot:
                 return
             if a in ("cv", "cvx"):
                 return self.cb_offer(cb, chat, user, cmsg, a == "cv")
+            if a == "tg":
+                return self.cb_target(cb, chat, user, cmsg, int(parts[1]))
+            if a in ("newl", "nw") and (len(parts) < 2 or parts[1] == "0" or db.get_list(int(parts[1])) is None):
+                return self.cb_newlist(cb, chat, user)
             if a == "t" and len(parts) == 2:            # v1 buttons: t:<task_id>
                 t = db.get_task(int(parts[1]))
                 parts = ["t", str(t["list_id"]) if t else "0", parts[1]]
@@ -898,12 +1078,31 @@ class TodoBot:
                 return self.answer(cb)
             if not lst["active"]:
                 return self.answer(cb, "این لیست بایگانی شده است.")
+            db.use_list(lst["id"], self.clock())
             if a in self.NEED_MOD and not self.can_modify(lst, chat, user.get("id")):
                 return self.answer(cb, LOCKED_MSG, alert=True)
             return self.cb_list(cb, chat, user, cmsg, lst, a, parts[2:])
         except (ValueError, IndexError, TypeError, KeyError) as e:
             log.info("bad callback %r: %s", data[:40], e)
         self.answer(cb)
+
+    def cb_newlist(self, cb, chat, user):
+        if len(db.active_lists(chat["id"])) >= db.MAX_ACTIVE:
+            return self.answer(cb, LIMIT_MSG, alert=True)
+        self.ask(chat, user, "newlist", None, text=NEWLIST_PROMPT)
+        return self.answer(cb, "✍️ عنوان لیست تازه را بنویسید")
+
+    def cb_target(self, cb, chat, user, cmsg, list_id):
+        p = db.prompt(chat["id"], cmsg.get("message_id"))
+        db.drop_prompt(chat["id"], cmsg.get("message_id"))
+        self.delete(chat["id"], cmsg.get("message_id")) or self._edit_plain(chat["id"], cmsg, "✔️")
+        lst = db.get_list(list_id) if list_id else None
+        if not p or not lst or not lst["active"] or lst["chat_id"] != chat.get("id"):
+            return self.answer(cb, "لغو شد" if not list_id else None)
+        req = json.loads(p["payload"])
+        fake = {"chat": chat, "from": user, "message_id": None}
+        self.run_cmd(req["name"], fake, chat, user, req["arg"], None, lst)
+        return self.answer(cb, "📋 " + lst["title"])
 
     def cb_offer(self, cb, chat, user, cmsg, yes):
         p = db.prompt(chat["id"], cmsg.get("message_id"))
@@ -989,12 +1188,26 @@ class TodoBot:
         if a == "st":   # removed feature: buttons on old messages just refresh the list
             self.refresh(lst)
             return self.answer(cb, "این گزینه حذف شده است.")
-        if a == "nw":
-            menu(render.kb_confirm("nwy:%d" % L, "more:%d" % L, "🆕 بله، لیست تازه", "◀️ نه"))
-            return self.answer(cb, "لیست فعلی بایگانی و لیست تازه ساخته شود؟")
-        if a == "nwy":
-            self.new_list(chat, user)
-            return self.answer(cb, "🆕 لیست تازه ساخته شد")
+        if a in ("nw", "newl"):
+            return self.cb_newlist(cb, chat, user)
+        if a == "nwy":                 # confirm button from the single-list version
+            self.refresh(lst)
+            return self.answer(cb, "حالا چند لیست ممکن است؛ از ⚙️ ← 🆕 لیست جدید بسازید.")
+        if a == "ls":
+            menu(render.kb_lists(lst, self.lists_with_tasks(lst["chat_id"])))
+            return self.answer(cb, "📚 لیست‌ها")
+        if a == "go":
+            self.refresh(lst, repost=True)
+            return self.answer(cb, "📋 " + lst["title"])
+        if a == "arc":
+            menu(render.kb_confirm("arcy:%d" % L, "more:%d" % L, "🗄 بله، بایگانی کن", "◀️ نه"))
+            return self.answer(cb, "این لیست بایگانی شود؟ (پیامش می‌ماند، دکمه‌ها برداشته می‌شوند)")
+        if a == "dell":
+            menu(render.kb_confirm("dely:%d" % L, "more:%d" % L, "🗑 بله، حذف کامل", "◀️ نه"))
+            return self.answer(cb, "این لیست و همهٔ کارهایش برای همیشه حذف شود؟", alert=True)
+        if a in ("arcy", "dely"):
+            self.close_list(lst, delete=a == "dely")
+            return self.answer(cb, "🗑 لیست حذف شد" if a == "dely" else "🗄 لیست بایگانی شد")
         if a == "undo":
             if not lst["undo_json"] or self.clock() - (lst["undo_at"] or 0) > render.UNDO_WINDOW:
                 self.refresh(lst)
@@ -1041,12 +1254,12 @@ class TodoBot:
             menu(self.kb_rem(lst))
             return self.answer(cb)
         if a == "rk":
-            menu(render.kb_times(lst, args[0], db.reminders(cid)))
+            menu(render.kb_times(lst, args[0], db.list_reminders(L)))
             return self.answer(cb, "⏰ ساعت را انتخاب کنید (دوباره بزنید = حذف)")
         if a == "rt":
             kind, minute = args[0], int(args[1])
             on = self.toggle_daily(lst, kind, minute, user)
-            menu(render.kb_times(lst, kind, db.reminders(cid)))
+            menu(render.kb_times(lst, kind, db.list_reminders(L)))
             return self.answer(cb, ("✅ یادآور %s %s" if on else "❌ حذف شد: %s %s") %
                                (render.REM_KIND[kind], fa("%02d:%02d" % (minute // 60, minute % 60))))
         if a == "rw":
@@ -1065,14 +1278,14 @@ class TodoBot:
             menu(self.kb_rem(lst))
             return self.answer(cb, "✅ یادآور: " + dates.fmt_due(ts, True, now))
         if a == "dm":
-            c = db.chat(cid)
             order = [m for m, _ in render.DUE_MODES]
-            nxt = order[(order.index(c["due_mode"]) + 1) % len(order)] if c["due_mode"] in order else "both"
-            db.set_chat(cid, due_mode=nxt)
+            cur = lst["due_mode"] or "both"
+            nxt = order[(order.index(cur) + 1) % len(order)] if cur in order else "both"
+            db.set_list(L, due_mode=nxt)
             menu(self.kb_rem(lst))
             return self.answer(cb, "⏳ موعد کارها: " + dict(render.DUE_MODES)[nxt])
         if a == "roff":
-            db.x("UPDATE reminders SET active=0 WHERE chat_id=?", (cid,))
+            db.x("UPDATE reminders SET active=0 WHERE list_id=?", (L,))
             menu(self.kb_rem(lst))
             return self.answer(cb, "🔕 همهٔ یادآورها خاموش شد")
         if a == "qt":

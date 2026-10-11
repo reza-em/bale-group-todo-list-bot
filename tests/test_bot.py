@@ -122,9 +122,9 @@ class TestRender(unittest.TestCase):
         few = render.kb_main(self.lst(), [self.task(i) for i in range(1, 9)], self.now)["inline_keyboard"]
         self.assertEqual(len(few), 9)
         self.assertTrue(few[0][0]["text"].startswith("⬜ ۱. "))
-        self.assertEqual([b["text"] for b in few[-1]], ["➕ افزودن", "⏰ یادآور", "⚙️ بیشتر"])
+        self.assertEqual([b["callback_data"] for b in few[-1]], ["add:1", "rem:1", "ls:1", "more:1"])
         many = render.kb_main(self.lst(), [self.task(i, done=int(i == 1)) for i in range(1, 13)], self.now)["inline_keyboard"]
-        self.assertEqual([len(r) for r in many], [5, 5, 2, 3])
+        self.assertEqual([len(r) for r in many], [5, 5, 2, 4])
         self.assertEqual(many[0][0], {"text": "✅۱", "callback_data": "t:1:1"})
 
     def test_undo_row_is_short_lived(self):
@@ -158,7 +158,7 @@ class TestButtonsUX(Base):
         self.assertIn({"chat_id": GID, "message_id": 501}, self.api.of("deleteMessage"))
 
     def test_add_button_force_reply_then_reply(self):
-        self.msg("/new")
+        self.msg("/new 📋 لیست کارها")
         list_mid = self.lst()["message_id"]
         self.cb("add:%d" % self.lst()["id"])
         prompt = self.api.of("sendMessage")[-1]
@@ -178,7 +178,7 @@ class TestButtonsUX(Base):
 
     def test_prompt_accepts_next_plain_message_and_fallback(self):
         self.api.fail["sendMessage_force"] = None
-        self.msg("/new")
+        self.msg("/new 📋 لیست کارها")
         orig = self.api.call
 
         def no_force(method, **p):
@@ -227,7 +227,7 @@ class TestButtonsUX(Base):
         self.assertEqual([t["text"] for t in self.tasks()], ["a", "b", "c"])
 
     def test_undo_button_expires_via_tick(self):
-        self.msg("/new")
+        self.msg("/new 📋 لیست کارها")
         self.msg("/add a")
         self.assertIn("undo:%d" % self.lst()["id"], self.datas(self.last_kb()))
         self.clock.t += 200
@@ -265,17 +265,6 @@ class TestButtonsUX(Base):
         self.assertEqual(offer["reply_markup"]["inline_keyboard"][0][0]["text"], "📋 تبدیل به لیست")
         self.cb("cv", mid=self.api.next_mid)
         self.assertEqual([(t["text"], t["done"]) for t in self.tasks()], [("نان", 0), ("شیر", 1)])
-
-    def test_new_list_confirm_archives_old(self):
-        self.msg("/add a")
-        old = self.lst()
-        self.cb("nw:%d" % old["id"])
-        self.assertIn("nwy:%d" % old["id"], self.datas(self.last_kb()))
-        self.cb("nwy:%d" % old["id"])
-        self.assertNotEqual(self.lst()["id"], old["id"])
-        self.assertIn("📦 بایگانی شد", [p for p in self.api.of("editMessageText") if p["message_id"] == old["message_id"]][-1]["text"])
-        ans = self.cb("t:%d:%d" % (old["id"], db.tasks(old["id"])[0]["id"]), mid=old["message_id"])
-        self.assertIn("بایگانی", ans["text"])
 
     def test_legacy_v1_button(self):
         self.msg("/add a")
@@ -451,7 +440,7 @@ class TestReminders(Base):
     def test_due_reminder_waits_for_group_quiet(self):
         tid = self.tasks()[1]["id"]
         db.set_task(tid, due_at=T(2026, 10, 12, 2), due_has_time=1)
-        db.set_chat(GID, due_mode="due")
+        db.set_list(self.L, due_mode="due")
         self.bot.tick(T(2026, 10, 12, 2, 0))
         self.assertEqual(self.api.sent_texts(GID), [])
         self.bot.tick(T(2026, 10, 12, 7, 0))
@@ -459,9 +448,9 @@ class TestReminders(Base):
 
     def test_due_mode_cycle_and_off(self):
         self.cb("dm:%d" % self.L)
-        self.assertEqual(db.chat(GID)["due_mode"], "due")
+        self.assertEqual(db.get_list(self.L)["due_mode"], "due")
         self.cb("dm:%d" % self.L)
-        self.assertEqual(db.chat(GID)["due_mode"], "off")
+        self.assertEqual(db.get_list(self.L)["due_mode"], "off")
         db.set_task(self.tasks()[0]["id"], due_at=self.clock.t + 60, due_has_time=1)
         self.bot.tick(self.clock.t + 120)
         self.assertEqual(self.api.sent_texts(GID), [])
@@ -491,6 +480,163 @@ class TestReminders(Base):
         self.assertNotIn("آمار", json.dumps(self.last_kb(), ensure_ascii=False))
         self.assertIsNone(__import__("parse").parse_command("/stats"))
         self.assertIsNone(__import__("parse").parse_command("آمار"))
+
+
+class TestMultiList(Base):
+    def setUp(self):
+        super().setUp()
+        self.msg("/add نان\nشیر")                         # list 1 (default title), pinned alone
+        self.first = self.lst()
+        self.assertEqual(len(self.api.of("pinChatMessage")), 1)
+
+    def new_via_button(self, title, user=REZA):
+        self.cb("newl:%d" % self.lst()["id"], user=user)
+        prompt_mid = self.api.next_mid
+        self.msg(title, user=user, reply_to=prompt_mid)
+        return self.lst()
+
+    def test_create_second_list_keeps_first_and_pins_index(self):
+        second = self.new_via_button("🛒 خرید")
+        self.assertNotEqual(second["id"], self.first["id"])
+        self.assertEqual(second["title"], "🛒 خرید")
+        self.assertEqual([l["id"] for l in db.active_lists(GID)], [self.first["id"], second["id"]])
+        self.assertEqual(db.get_list(self.first["id"])["active"], 1)
+        idx = db.chat(GID)["index_mid"]
+        self.assertTrue(idx)
+        self.assertEqual(self.api.of("pinChatMessage")[-1]["message_id"], idx)
+        self.assertIn({"chat_id": GID, "message_id": self.first["message_id"]}, self.api.of("unpinChatMessage"))
+        idx_text = [p for p in self.api.of("sendMessage") if "لیست‌های گروه" in p["text"]][-1]
+        self.assertIn("🛒 خرید — ۰ از ۰", idx_text["text"])
+        self.assertIn("go:%d" % self.first["id"], self.datas(idx_text["reply_markup"]["inline_keyboard"]))
+
+    def test_slash_new_with_title_and_limit(self):
+        for i in range(9):
+            self.msg("/new لیست %d" % i)
+        self.assertEqual(len(db.active_lists(GID)), 10)
+        self.msg("/new یازدهم")
+        self.assertEqual(len(db.active_lists(GID)), 10)
+        self.assertIn("حداکثر", self.api.sent_texts(GID)[-1])
+
+    def test_switch_with_lists_menu_and_index(self):
+        second = self.new_via_button("🛒 خرید")
+        self.cb("ls:%d" % second["id"])
+        self.assertIn("go:%d" % self.first["id"], self.datas(self.last_kb()))
+        old_mid = self.first["message_id"]
+        ans = self.cb("go:%d" % self.first["id"], mid=db.chat(GID)["index_mid"])
+        self.assertIn("لیست کارها", ans["text"])
+        moved = db.get_list(self.first["id"])
+        self.assertNotEqual(moved["message_id"], old_mid)                # re-sent at the bottom
+        self.assertIn({"chat_id": GID, "message_id": old_mid}, self.api.of("deleteMessage"))
+        self.assertEqual(self.lst()["id"], self.first["id"])             # now the current list
+
+    def test_text_commands_use_recent_list_and_title_prefix(self):
+        second = self.new_via_button("🛒 خرید")
+        self.msg("/add تخم‌مرغ")                       # current = second
+        self.assertEqual([t["text"] for t in db.tasks(second["id"])], ["تخم‌مرغ"])
+        self.msg("انجام شد لیست 2")                    # title prefix «لیست» -> first list
+        self.assertEqual(db.tasks(self.first["id"])[1]["done"], 1)
+        self.msg("/done خرید 1")
+        self.assertEqual(db.tasks(second["id"])[0]["done"], 1)
+        self.assertEqual(self.lst()["id"], second["id"])
+        self.msg("/edit لیست 1 نان سنگک")
+        self.assertEqual(db.tasks(self.first["id"])[0]["text"], "نان سنگک")
+
+    def test_ambiguous_or_unknown_title_asks_with_buttons(self):
+        self.new_via_button("🛒 خرید هفته")
+        self.new_via_button("🛒 خرید ماه")
+        self.msg("/done خرید 1")
+        ask = self.api.of("sendMessage")[-1]
+        self.assertEqual(ask["text"], "📚 کدام لیست؟")
+        datas = self.datas(ask["reply_markup"]["inline_keyboard"])
+        month = [l for l in db.active_lists(GID) if l["title"].endswith("ماه")][0]
+        self.assertIn("tg:%d" % month["id"], datas)
+        self.assertNotIn("tg:%d" % self.first["id"], datas)
+        self.msg("آره", user=ALI)                       # chatter does not trigger anything
+        self.assertEqual(self.api.of("sendMessage")[-1]["text"], "📚 کدام لیست؟")
+
+    def test_target_button_runs_command(self):
+        second = self.new_via_button("🛒 خرید")
+        self.msg("/add a")                              # second: a
+        self.msg("/done ناموجود 1")                     # unknown title + slash -> ask
+        ask_mid = self.api.next_mid if "کدام لیست" in self.api.sent_texts(GID)[-1] else None
+        self.assertIsNotNone(ask_mid)
+        self.cb("tg:%d" % self.first["id"], mid=ask_mid)
+        self.assertEqual(db.tasks(self.first["id"])[0]["done"], 1)
+        self.assertEqual(db.tasks(second["id"])[0]["done"], 0)
+        self.msg("انجام شد ناموجود 1")                  # alias + unknown title = chatter, ignored
+        self.assertNotIn("کدام لیست", self.api.sent_texts(GID)[-1])
+
+    def test_archive_and_delete_back_to_single_pin(self):
+        second = self.new_via_button("🛒 خرید")
+        self.cb("arc:%d" % second["id"])
+        self.assertIn("arcy:%d" % second["id"], self.datas(self.last_kb()))
+        self.cb("arcy:%d" % second["id"])
+        self.assertEqual(db.get_list(second["id"])["active"], 0)
+        self.assertIsNone(db.chat(GID)["index_mid"])
+        self.assertEqual(self.api.of("pinChatMessage")[-1]["message_id"], self.first["message_id"])
+        third = self.new_via_button("سفر")
+        self.cb("dell:%d" % third["id"])
+        self.cb("dely:%d" % third["id"])
+        self.assertIsNone(db.get_list(third["id"]))
+        self.assertEqual([l["id"] for l in db.active_lists(GID)], [self.first["id"]])
+        ans = self.cb("t:%d:%d" % (second["id"], db.tasks(second["id"])[0]["id"]) if db.tasks(second["id"]) else
+                      "r:%d" % second["id"], mid=second["message_id"])
+        self.assertIn("بایگانی", ans["text"])
+
+    def test_per_list_reminders_combined_post_and_dm_grouping(self):
+        second = self.new_via_button("🛒 خرید")
+        self.msg("/add تخم‌مرغ @ali")
+        self.msg("سلام", user=ALI)
+        self.msg("/start g%d" % GID, user=ALI, chat={"id": 2, "type": "private"})
+        db.set_chat(GID, quiet_on=0)
+        self.cb("rt:%d:daily:%d" % (self.first["id"], 18 * 60))
+        self.cb("rt:%d:daily:%d" % (second["id"], 18 * 60))
+        self.cb("rt:%d:daily:%d" % (second["id"], 21 * 60))
+        self.assertEqual(len(db.list_reminders(self.first["id"])), 1)
+        self.assertEqual(len(db.list_reminders(second["id"])), 2)
+        self.assertIn("هر روز ۱۸:۰۰", render.render_text(db.get_list(self.first["id"]), [], now=self.clock.t,
+                                                          rems=db.list_reminders(self.first["id"])))
+        self.api.calls.clear()
+        self.bot.tick(T(2026, 10, 11, 18, 0))
+        posts = [t for t in self.api.sent_texts(GID) if "یادآوری" in t]
+        self.assertEqual(len(posts), 1)                                      # combined
+        self.assertIn("📋 *📋 لیست کارها* (۲ کار باز)", posts[0])
+        self.assertIn("📋 *🛒 خرید* (۱ کار باز)", posts[0])
+        dm = [p for p in self.api.of("sendMessage") if p["chat_id"] == 2][-1]
+        self.assertIn("👤 کارهای شما:", dm["text"])
+        self.assertIn("*🛒 خرید*", dm["text"])
+        egg = db.tasks(second["id"])[0]
+        self.assertIn("dt:%d" % egg["id"], json.dumps(dm["reply_markup"]))
+        self.cb("dt:%d" % egg["id"], user=ALI, chat={"id": 2, "type": "private"}, mid=900, markup=dm["reply_markup"])
+        self.assertEqual(db.get_task(egg["id"])["done"], 1)
+        self.assertTrue([p for p in self.api.of("editMessageText") if p["message_id"] == db.get_list(second["id"])["message_id"]])
+        self.api.calls.clear()
+        self.bot.tick(T(2026, 10, 11, 21, 0))                                # only the second list fires
+        posts = [t for t in self.api.sent_texts(GID) if "یادآوری" in t]
+        self.assertEqual(posts, [])                                          # its only task is done -> nothing
+        self.cb("roff:%d" % second["id"])
+        self.assertEqual(db.list_reminders(second["id"]), [])
+        self.assertEqual(len(db.list_reminders(self.first["id"])), 1)
+
+
+class TestMigration(unittest.TestCase):
+    def test_v2_database_upgrades_in_place(self):
+        import sqlite3, tempfile
+        path = tempfile.mktemp(suffix=".db")
+        c = sqlite3.connect(path)
+        c.executescript(db.SCHEMA.replace("CREATE INDEX IF NOT EXISTS rem_next ON reminders(active, next_at);", ""))
+        c.execute("INSERT INTO chats(chat_id,type,title,due_mode) VALUES(?, 'group', 'g', 'due')", (GID,))
+        c.execute("INSERT INTO lists(id,chat_id,title,message_id,active,created_at,updated_at) VALUES(1,?,'old',8,1,1,1)", (GID,))
+        c.execute("INSERT INTO tasks(list_id,pos,text) VALUES(1,1,'x')")
+        c.execute("INSERT INTO reminders(chat_id,kind,minute,next_at,active) VALUES(?,'daily',540,100,1)", (GID,))
+        c.commit(); c.close()
+        db.connect(path)
+        self.assertEqual(db.q("SELECT list_id FROM reminders")[0]["list_id"], 1)
+        l = db.get_list(1)
+        self.assertEqual((l["due_mode"], l["message_id"], l["title"]), ("due", 8, "old"))
+        self.assertEqual(len(db.tasks(1)), 1)
+        db.connect(":memory:")
+        os.remove(path)
 
 
 class TestPrivate(Base):

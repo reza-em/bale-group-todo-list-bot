@@ -33,7 +33,7 @@ SLASH = {
     "done": "done", "undo": "undo", "del": "del", "delete": "del", "rm": "del",
     "edit": "edit", "clear_done": "clear_done", "cleardone": "clear_done",
     "reset": "reset", "title": "title", "lock": "lock", "unlock": "unlock",
-    "due": "due", "remind": "remind", "reminder": "remind", "settings": "settings",
+    "due": "due", "remind": "remind", "lists": "lists", "reminder": "remind", "settings": "settings",
 }
 # Persian aliases (no slash). (regex on normalised text, canonical, needs-argument)
 # "needs" = "num": must be followed by numbers; "text": must be followed by text; None: must be the whole message.
@@ -45,6 +45,7 @@ FA_ALIASES = [
     (r"اضافه کن|اضافه|افزودن", "add", "text_or_reply"),
     (r"وارد کن|وارد کردن|ایمپورت", "import", None),
     (r"لیست جدید|فهرست جدید", "new", "opt"),
+    (r"لیست ها|لیستها|همه لیست ها", "lists", None),
     (r"لیست|فهرست|لیست کارها", "list", None),
     (r"عنوان", "title", "text"),
     (r"پاکسازی|پاک کردن انجام ?شده ?ها", "clear_done", None),
@@ -87,7 +88,10 @@ def parse_command(text, bot_username=None, is_reply=False):
                 continue  # chatter like "لیست خرید رو کی میاره؟" is not a command
         elif need == "num":
             if not parse_numbers(rest)[0] or parse_numbers(rest)[1]:
-                continue
+                # «انجام شد خرید 3»: list-title prefix + numbers (the bot checks the title exists)
+                tm = re.match(r"^([^\d۰-۹٠-٩#\n]{1,40}?)\s+([#\d۰-۹٠-٩][\d۰-۹٠-٩#\s,،\-و]*)$", rest)
+                if not tm or not parse_numbers(tm.group(2))[0] or parse_numbers(tm.group(2))[1]:
+                    continue
         elif need == "text":
             if not rest:
                 continue

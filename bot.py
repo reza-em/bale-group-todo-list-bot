@@ -45,7 +45,7 @@ def scheduler(bot):
         time.sleep(TICK)
 
 
-UI_VERSION = "3"
+UI_VERSION = "4"
 
 
 def upgrade_ui(bot, api):

@@ -69,7 +69,11 @@ MIGRATIONS = [  # (table, column, ddl) added to databases created by v1
     ("tasks", "done_by_id", "INTEGER"),
     ("lists", "undo_json", "TEXT"), ("lists", "undo_at", "REAL"), ("lists", "undo_label", "TEXT"),
     ("lists", "undo_shown", "INTEGER NOT NULL DEFAULT 0"), ("lists", "locked_by", "INTEGER"),
+    # v3: several active lists per chat
+    ("lists", "last_used", "REAL"), ("lists", "due_mode", "TEXT"),
+    ("reminders", "list_id", "INTEGER"), ("chats", "index_mid", "INTEGER"),
 ]
+MAX_ACTIVE = 10
 
 
 def _migrate(c):
@@ -77,6 +81,13 @@ def _migrate(c):
         cols = {r[1] for r in c.execute("PRAGMA table_info(%s)" % table)}
         if col not in cols:
             c.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, col, ddl))
+            if (table, col) == ("lists", "due_mode"):     # due-reminder mode moved from chat to list
+                c.execute("UPDATE lists SET due_mode=COALESCE((SELECT due_mode FROM chats WHERE chats.chat_id=lists.chat_id),'both')")
+            if (table, col) == ("lists", "last_used"):
+                c.execute("UPDATE lists SET last_used=COALESCE(updated_at, created_at)")
+    # reminders were per chat before v3: attach them to that chat's current list (idempotent: only NULLs)
+    c.execute("UPDATE reminders SET list_id=(SELECT id FROM lists WHERE lists.chat_id=reminders.chat_id AND active=1 "
+              "ORDER BY COALESCE(last_used,0) DESC, id DESC LIMIT 1) WHERE list_id IS NULL")
     c.commit()
 
 
@@ -114,8 +125,32 @@ def x(sql, args=()):
 
 # --- lists ---
 def active_list(chat_id):
-    r = q("SELECT * FROM lists WHERE chat_id=? AND active=1 ORDER BY id DESC LIMIT 1", (chat_id,))
+    """The chat's CURRENT list = the most recently used active one."""
+    r = q("SELECT * FROM lists WHERE chat_id=? AND active=1 ORDER BY COALESCE(last_used,0) DESC, id DESC LIMIT 1",
+          (chat_id,))
     return r[0] if r else None
+
+
+def active_lists(chat_id):
+    """All active lists of a chat in creation order."""
+    return q("SELECT * FROM lists WHERE chat_id=? AND active=1 ORDER BY id", (chat_id,))
+
+
+def use_list(list_id, now=None):
+    """Mark as the chat's current list (strictly newer than any other, even within the same second)."""
+    x("UPDATE lists SET last_used=MAX(?, COALESCE((SELECT MAX(last_used) FROM lists l2 WHERE l2.chat_id=lists.chat_id "
+      "AND l2.id!=lists.id), 0) + 0.001) WHERE id=?", (now or time.time(), list_id))
+
+
+def archive_list(list_id):
+    x("UPDATE lists SET active=0 WHERE id=?", (list_id,))
+    x("UPDATE reminders SET active=0 WHERE list_id=?", (list_id,))
+
+
+def delete_list(list_id):
+    x("DELETE FROM tasks WHERE list_id=?", (list_id,))
+    x("DELETE FROM reminders WHERE list_id=?", (list_id,))
+    x("DELETE FROM lists WHERE id=?", (list_id,))
 
 
 def get_list(list_id):
@@ -123,11 +158,14 @@ def get_list(list_id):
     return r[0] if r else None
 
 
-def create_list(chat_id, creator_id, title=None):
-    now = time.time()
-    x("UPDATE lists SET active=0 WHERE chat_id=? AND active=1", (chat_id,))
-    cur = x("INSERT INTO lists(chat_id,title,creator_id,created_at,updated_at) VALUES(?,?,?,?,?)",
-            (chat_id, title or "📋 لیست کارها", creator_id, now, now))
+def create_list(chat_id, creator_id, title=None, now=None):
+    """Adds a list; other active lists stay active (several lists per chat)."""
+    now = now or time.time()
+    prev = active_list(chat_id)
+    cur = x("INSERT INTO lists(chat_id,title,creator_id,created_at,updated_at,last_used,due_mode) VALUES(?,?,?,?,?,?,?)",
+            (chat_id, title or "📋 لیست کارها", creator_id, now, now, now + 1e-3,
+             prev["due_mode"] if prev and prev["due_mode"] else "both"))
+    use_list(cur.lastrowid, now)          # the new list becomes the current one
     return get_list(cur.lastrowid)
 
 
@@ -271,9 +309,13 @@ def reminders(chat_id, active_only=True):
              (chat_id,))
 
 
-def add_reminder(chat_id, kind, minute, next_at, user_id=None):
-    return x("INSERT INTO reminders(chat_id,kind,minute,next_at,created_by,created_at) VALUES(?,?,?,?,?,?)",
-             (chat_id, kind, minute, next_at, user_id, time.time())).lastrowid
+def list_reminders(list_id):
+    return q("SELECT * FROM reminders WHERE list_id=? AND active=1 ORDER BY kind, minute", (list_id,))
+
+
+def add_reminder(chat_id, kind, minute, next_at, user_id=None, list_id=None):
+    return x("INSERT INTO reminders(chat_id,kind,minute,next_at,created_by,created_at,list_id) VALUES(?,?,?,?,?,?,?)",
+             (chat_id, kind, minute, next_at, user_id, time.time(), list_id)).lastrowid
 
 
 def due_reminders(now):
