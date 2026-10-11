@@ -483,13 +483,14 @@ class TestReminders(Base):
         self.cb("roff:%d" % self.L)
         self.assertEqual(db.reminders(GID), [])
 
-    def test_stats(self):
-        self.cb("t:%d:%d" % (self.L, self.tasks()[0]["id"]), user=ALI)
-        self.cb("t:%d:%d" % (self.L, self.tasks()[1]["id"]), user=ALI)
-        self.cb("t:%d:%d" % (self.L, self.tasks()[2]["id"]), user=REZA)
-        s = self.bot.stats_text(GID)
-        self.assertIn("🥇 علی: ۲ کار", s)
-        self.assertIn("🥈 رضا: ۱ کار", s)
+    def test_old_stats_button_answers_gracefully(self):
+        ans = self.cb("st:%d" % self.L)
+        self.assertEqual(ans["text"], "این گزینه حذف شده است.")
+        self.assertNotIn("st:%d" % self.L, self.datas(self.last_kb()))
+        self.cb("more:%d" % self.L)
+        self.assertNotIn("آمار", json.dumps(self.last_kb(), ensure_ascii=False))
+        self.assertIsNone(__import__("parse").parse_command("/stats"))
+        self.assertIsNone(__import__("parse").parse_command("آمار"))
 
 
 class TestPrivate(Base):

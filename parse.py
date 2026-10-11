@@ -33,7 +33,7 @@ SLASH = {
     "done": "done", "undo": "undo", "del": "del", "delete": "del", "rm": "del",
     "edit": "edit", "clear_done": "clear_done", "cleardone": "clear_done",
     "reset": "reset", "title": "title", "lock": "lock", "unlock": "unlock",
-    "due": "due", "stats": "stats", "remind": "remind", "reminder": "remind", "settings": "settings",
+    "due": "due", "remind": "remind", "reminder": "remind", "settings": "settings",
 }
 # Persian aliases (no slash). (regex on normalised text, canonical, needs-argument)
 # "needs" = "num": must be followed by numbers; "text": must be followed by text; None: must be the whole message.
@@ -53,7 +53,6 @@ FA_ALIASES = [
     (r"باز کردن قفل|آزاد", "unlock", None),
     (r"راهنما|کمک", "help", None),
     (r"موعد", "due", "text"),
-    (r"آمار", "stats", None),
     (r"یادآور|یادآوری", "remind", None),
     (r"تنظیمات", "settings", None),
 ]

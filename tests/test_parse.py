@@ -93,4 +93,3 @@ class TestMeta(unittest.TestCase):
     def test_new_aliases(self):
         self.assertEqual(parse_command("/due 3 فردا"), ("due", "3 فردا"))
         self.assertEqual(parse_command("یادآور"), ("remind", ""))
-        self.assertEqual(parse_command("آمار"), ("stats", ""))

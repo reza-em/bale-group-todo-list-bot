@@ -13,7 +13,7 @@
 
 ### امکانات
 - **دکمه‌محور:** ➕ افزودن یک پیام «ریپلای کن» می‌فرستد؛ هر خط یک کار. پیام راهنما و جواب شما بعدش پاک می‌شوند.
-- **⚙️ بیشتر** (در همان پیام): ✏️ ویرایش، 🗑 حذف، 👤 مسئول، 📅 موعد، 🧹 پاک کردن انجام‌شده‌ها، 🔒 قفل، 🏷 عنوان، 📊 آمار هفته، 🆕 لیست جدید، 🌙 ساعت سکوت
+- **⚙️ بیشتر** (در همان پیام): ✏️ ویرایش، 🗑 حذف، 👤 مسئول، 📅 موعد، 🧹 پاک کردن انجام‌شده‌ها، 🔒 قفل، 🏷 عنوان، 🆕 لیست جدید، 🌙 ساعت سکوت
 - **↩️ واگرد** تا ۲ دقیقه بعد از هر تغییر
 - **مسئول و موعد در متن:** «خرید نان @ali | فردا ۱۸» — تاریخ فارسی/شمسی: «فردا ۱۸»، «شنبه»، «۲۵ مهر ۱۰:۳۰»، «۱۴۰۵/۸/۱»، «۲ ساعت دیگه»؛ کارهای عقب‌افتاده ⚠️
 - **تبدیل پیام به لیست:** لیستی را بفرستید و ربات را منشن کنید (یا روی پیام ربات ریپلای کنید) → دکمهٔ «📋 تبدیل به لیست»
@@ -23,8 +23,8 @@
 - لیست شخصی در چت خصوصی؛ اعداد فارسی؛ دستورهای متنی برای حرفه‌ای‌ها (پاسخ‌شان بعد از ۱۰ ثانیه پاک می‌شود)
 
 ### دستورهای متنی (اختیاری)
-`/list` `/new` `/add` `/import` `/done ۱ ۳` `/undo` `/del` `/edit ۳ متن` `/due ۳ فردا ۱۸` `/title` `/clear_done` `/reset` `/lock` `/unlock` `/remind` `/stats` `/settings`
-فارسی: «اضافه متن»، «انجام شد ۳»، «برگشت ۳»، «حذف ۳»، «ویرایش ۳ متن»، «موعد ۳ فردا»، «لیست»، «یادآور»، «آمار»
+`/list` `/new` `/add` `/import` `/done ۱ ۳` `/undo` `/del` `/edit ۳ متن` `/due ۳ فردا ۱۸` `/title` `/clear_done` `/reset` `/lock` `/unlock` `/remind` `/settings`
+فارسی: «اضافه متن»، «انجام شد ۳»، «برگشت ۳»، «حذف ۳»، «ویرایش ۳ متن»، «موعد ۳ فردا»، «لیست»، «یادآور»
 
 </div>
 
@@ -35,7 +35,7 @@ A Persian-first, button-driven to-do list bot for the **Bale** messenger (Telegr
 **Features**
 - Toggle buttons per task (short text for ≤ 8 tasks, compact numbered rows of 5 otherwise) + `➕ Add | ⏰ Reminders | ⚙️ More`
 - ➕ Add uses a ForceReply prompt (one task per line); prompt and reply are deleted afterwards when the bot is admin
-- ⚙️ More: edit, delete, assign (👤 members who interacted, or `@username` in the text), due date (📅 presets or Persian natural input, Jalali), clear done, lock, title, weekly stats, new list, quiet hours
+- ⚙️ More: edit, delete, assign (👤 members who interacted, or `@username` in the text), due date (📅 presets or Persian natural input, Jalali), clear done, lock, title, new list, quiet hours
 - Short-lived ↩️ undo (whole-list snapshot)
 - "📋 Convert to list" offer when a list-looking message mentions/replies to the bot
 - Reminders: daily / Sat–Wed at preset or custom times, one-time, per-task due reminders (1 h before + at due), turn all off; Tehran time

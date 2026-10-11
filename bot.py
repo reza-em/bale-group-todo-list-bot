@@ -15,7 +15,7 @@ COMMANDS = [
     ("done", "تیک زدن: /done 1 3"), ("undo", "برداشتن تیک"), ("del", "حذف کار"), ("edit", "ویرایش: /edit 2 متن"),
     ("import", "ریپلای روی یک لیست آماده"), ("title", "تغییر عنوان"), ("clear_done", "حذف انجام‌شده‌ها"),
     ("reset", "پاک کردن کل لیست"), ("lock", "فقط ادمین‌ها تغییر دهند"), ("unlock", "باز کردن قفل"),
-    ("due", "موعد: /due 2 فردا 18"), ("remind", "تنظیم یادآور"), ("stats", "آمار هفته"),
+    ("due", "موعد: /due 2 فردا 18"), ("remind", "تنظیم یادآور"),
     ("settings", "تنظیمات"), ("help", "راهنما"),
 ]
 
@@ -45,7 +45,7 @@ def scheduler(bot):
         time.sleep(TICK)
 
 
-UI_VERSION = "2"
+UI_VERSION = "3"
 
 
 def upgrade_ui(bot, api):

@@ -22,7 +22,7 @@ WELCOME = """👋 سلام! من لیست کارهای گروه را نگه می
 HELP = """📋 *راهنمای لیست کارها*
 
 همه‌چیز با دکمه‌های زیر لیست سنجاق‌شده انجام می‌شود:
-⬜/✅ تیک زدن · ➕ افزودن (هر خط یک کار) · ⏰ یادآور · ⚙️ بیشتر (ویرایش، حذف، مسئول، موعد، قفل، عنوان، آمار، لیست جدید، ساعت سکوت)
+⬜/✅ تیک زدن · ➕ افزودن (هر خط یک کار) · ⏰ یادآور · ⚙️ بیشتر (ویرایش، حذف، مسئول، موعد، قفل، عنوان، لیست جدید، ساعت سکوت)
 ↩️ واگرد تا ۲ دقیقه بعد از هر تغییر.
 
 در متن کار:  «خرید نان @ali | فردا ۱۸»  ← مسئول و موعد
@@ -30,7 +30,7 @@ HELP = """📋 *راهنمای لیست کارها*
 *یادآور شخصی:* در منوی ⏰ دکمهٔ «🔔 فعال‌سازی یادآور شخصی» را بزنید و ربات را استارت کنید؛ کارهایتان در پیوی هم یادآوری می‌شود و همان‌جا تیک می‌زنید.
 
 *دستورهای متنی (اختیاری):*
-/list · /new · /add متن · /done ۱ ۳ · /undo ۲ · /del ۳ · /edit ۳ متن · /due ۳ فردا ۱۸ · /title عنوان · /import (ریپلای روی یک لیست) · /clear_done · /reset · /lock · /unlock · /stats · /remind
+/list · /new · /add متن · /done ۱ ۳ · /undo ۲ · /del ۳ · /edit ۳ متن · /due ۳ فردا ۱۸ · /title عنوان · /import (ریپلای روی یک لیست) · /clear_done · /reset · /lock · /unlock · /remind
 فارسی: «اضافه متن»، «انجام شد ۳»، «برگشت ۳»، «حذف ۳»، «لیست»"""
 
 HELP_PV = """👋 سلام! اینجا هم یک *لیست شخصی* دارید: هر متنی بفرستید (هر خط یک کار) به لیست اضافه می‌شود؛ با دکمه‌ها تیک بزنید.
@@ -449,9 +449,6 @@ class TodoBot:
         lst = db.ensure_list(chat["id"], user.get("id"))
         self.refresh(lst, kb=self.kb_rem(lst))
 
-    def cmd_stats(self, msg, chat, user, arg, reply):
-        self.safe_send(chat["id"], self.stats_text(chat["id"]))
-
     def cmd_list(self, msg, chat, user, arg, reply):
         self.refresh(db.ensure_list(chat["id"], user.get("id")), repost=True)
 
@@ -850,25 +847,6 @@ class TodoBot:
                 db.set_list(lst["id"], undo_shown=0)
                 self.refresh(lst)
 
-    # ================================================================== stats
-    def stats_text(self, chat_id):
-        since = self.clock() - 7 * 86400
-        rows = db.q("SELECT MAX(COALESCE(t.done_by,'؟')) AS who, COUNT(*) AS n FROM tasks t JOIN lists l ON l.id=t.list_id "
-                    "WHERE l.chat_id=? AND t.done=1 AND t.done_at>=? GROUP BY COALESCE(t.done_by_id, t.done_by) "
-                    "ORDER BY n DESC", (chat_id, since))
-        lst = db.active_list(chat_id)
-        lines = ["📊 *آمار ۷ روز گذشته*", ""]
-        medals = ["🥇", "🥈", "🥉"]
-        for i, r in enumerate(rows[:10]):
-            lines.append("%s %s: %s کار" % (medals[i] if i < 3 else "▫️", render.md_escape(r["who"]), fa(r["n"])))
-        if not rows:
-            lines.append("این هفته هنوز کاری تیک نخورده.")
-        if lst:
-            open_ = [t for t in db.tasks(lst["id"]) if not t["done"]]
-            over = [t for t in open_ if dates.is_overdue(t["due_at"], t["due_has_time"], self.clock())]
-            lines += ["", "باز: %s کار%s" % (fa(len(open_)), (" · ⚠️ عقب‌افتاده: %s" % fa(len(over))) if over else "")]
-        return "\n".join(lines)
-
     # ================================================================== per-user (DM) settings
     def user_settings_text(self, uid):
         u = db.user(uid)
@@ -1008,11 +986,9 @@ class TodoBot:
             self.refresh(lst)
             self.ask(chat, user, "title", lst, text="🏷 %s عنوان تازهٔ لیست را بنویسید:")
             return self.answer(cb, "✍️ عنوان را بنویسید")
-        if a == "st":
-            res = self.safe_send(chat["id"], self.stats_text(chat["id"]))
-            if res and is_group(chat):
-                db.schedule_delete(chat["id"], res.get("message_id"), self.clock() + 120)
-            return self.answer(cb)
+        if a == "st":   # removed feature: buttons on old messages just refresh the list
+            self.refresh(lst)
+            return self.answer(cb, "این گزینه حذف شده است.")
         if a == "nw":
             menu(render.kb_confirm("nwy:%d" % L, "more:%d" % L, "🆕 بله، لیست تازه", "◀️ نه"))
             return self.answer(cb, "لیست فعلی بایگانی و لیست تازه ساخته شود؟")
