@@ -4,45 +4,47 @@
 
 ## فارسی
 
-رباتی ساده برای پیام‌رسان **بله**: آن را به گروه اضافه کنید، لیست کارها را بسازید و هر کاری که انجام شد تیک بزنید. ربات **همان یک پیام سنجاق‌شده** را ویرایش می‌کند، پس لیست همیشه به‌روز و مرتب می‌ماند.
+ربات **لیست کارها** برای پیام‌رسان **بله**. یک پیام سنجاق‌شده کل رابط کاربری است: کار اضافه کنید، تیک بزنید، مسئول و موعد بگذارید و یادآور بگیرید — بدون شلوغ کردن گروه.
+
+### شروع سریع
+۱. ربات را به گروه اضافه کنید و **ادمین** کنید (برای سنجاق و پاک کردن پیام‌های کمکی).
+۲. «📋 ساخت لیست» را بزنید.
+۳. زیر لیست: ⬜/✅ تیک · ➕ افزودن · ⏰ یادآور · ⚙️ بیشتر
 
 ### امکانات
-- لیست جداگانه برای هر گروه (و لیست شخصی در چت خصوصی)
-- ارسال و **سنجاق** لیست؛ به‌روزرسانی با ویرایش همان پیام (اگر پیام پاک شده باشد، پیام تازه فرستاده و دوباره سنجاق می‌شود)
-- دکمهٔ تیک برای هر کار (در لیست‌های بلند: دکمه‌های شماره‌دار فشرده در ردیف‌های ۵تایی) + دکمهٔ 🔄
-- نوار پیشرفت، مثل «پیشرفت: ۳ از ۷ (۴۳٪)» و زمان آخرین به‌روزرسانی به وقت تهران (تاریخ شمسی)
-- وارد کردن لیست آماده: روی پیام لیست ریپلای کنید و `/import` بزنید (شماره‌دار، بولت‌دار، با ✅/☑/▫ یا بدون علامت)
-- اعداد فارسی و دستورهای فارسی بدون اسلش
-- جشن 🎉 وقتی همه کارها انجام شد
-- قفل: `/lock` تا فقط ادمین‌ها و سازندهٔ لیست بتوانند تغییر دهند
+- **دکمه‌محور:** ➕ افزودن یک پیام «ریپلای کن» می‌فرستد؛ هر خط یک کار. پیام راهنما و جواب شما بعدش پاک می‌شوند.
+- **⚙️ بیشتر** (در همان پیام): ✏️ ویرایش، 🗑 حذف، 👤 مسئول، 📅 موعد، 🧹 پاک کردن انجام‌شده‌ها، 🔒 قفل، 🏷 عنوان، 📊 آمار هفته، 🆕 لیست جدید، 🌙 ساعت سکوت
+- **↩️ واگرد** تا ۲ دقیقه بعد از هر تغییر
+- **مسئول و موعد در متن:** «خرید نان @ali | فردا ۱۸» — تاریخ فارسی/شمسی: «فردا ۱۸»، «شنبه»، «۲۵ مهر ۱۰:۳۰»، «۱۴۰۵/۸/۱»، «۲ ساعت دیگه»؛ کارهای عقب‌افتاده ⚠️
+- **تبدیل پیام به لیست:** لیستی را بفرستید و ربات را منشن کنید (یا روی پیام ربات ریپلای کنید) → دکمهٔ «📋 تبدیل به لیست»
+- **یادآور (⏰):** هر روز / شنبه تا چهارشنبه (۰۹، ۱۳، ۱۸، ۲۱ یا ساعت دلخواه)، یک‌باره، یادآور موعد هر کار (۱ ساعت قبل + سر موعد)، خاموش کردن همه — به وقت تهران
+- **یادآور شخصی:** «🔔 فعال‌سازی یادآور شخصی» → ربات را استارت کنید؛ هنگام یادآوری کارهای شما در پیوی می‌آید و همان‌جا تیک می‌زنید (لیست گروه هم به‌روز می‌شود). 🔕 قطع یادآور در پیوی.
+- **🌙 ساعت سکوت** (پیش‌فرض روشن، ۲۳ تا ۷): هم برای گروه (⚙️ یا ⏰) و هم برای هر نفر در پیوی، قابل خاموش/روشن و تغییر ساعت (۲۲–۷، ۲۳–۷، ۰۰–۸، ۲۳–۹). یادآورهای داخل این بازه به پایان آن منتقل می‌شوند.
+- لیست شخصی در چت خصوصی؛ اعداد فارسی؛ دستورهای متنی برای حرفه‌ای‌ها (پاسخ‌شان بعد از ۱۰ ثانیه پاک می‌شود)
 
-### دستورها
-| دستور | معادل فارسی | کار |
-|---|---|---|
-| `/new [عنوان]` | لیست جدید | شروع لیست تازه |
-| `/list` | لیست | نمایش دوباره و سنجاق |
-| `/add متن` (چند خط = چند کار) | اضافه متن | افزودن |
-| `/import` (ریپلای) | وارد کن | وارد کردن لیست آماده |
-| `/done ۱ ۳ ۵` یا `۲-۴` | انجام شد ۳ | تیک |
-| `/undo ۳` | برگشت ۳ | برداشتن تیک |
-| `/del ۳` | حذف ۳ | حذف |
-| `/edit ۳ متن` | ویرایش ۳ متن | ویرایش |
-| `/title عنوان` | عنوان … | تغییر عنوان |
-| `/clear_done` | پاکسازی | حذف انجام‌شده‌ها |
-| `/reset` | ریست | پاک کردن همه (با تأیید) |
-| `/lock` ، `/unlock` | قفل | محدود کردن تغییرات |
-
-> برای سنجاق کردن و دیدن دستورهای فارسیِ بدون اسلش، ربات را در گروه **ادمین** کنید.
+### دستورهای متنی (اختیاری)
+`/list` `/new` `/add` `/import` `/done ۱ ۳` `/undo` `/del` `/edit ۳ متن` `/due ۳ فردا ۱۸` `/title` `/clear_done` `/reset` `/lock` `/unlock` `/remind` `/stats` `/settings`
+فارسی: «اضافه متن»، «انجام شد ۳»، «برگشت ۳»، «حذف ۳»، «ویرایش ۳ متن»، «موعد ۳ فردا»، «لیست»، «یادآور»، «آمار»
 
 </div>
 
 ## English
 
-A small Persian-first to-do list bot for the **Bale** messenger (Telegram-compatible Bot API at `https://tapi.bale.ai`). Add it to a group, build a list, tick tasks as they get done — the bot keeps editing **one pinned list message**.
+A Persian-first, button-driven to-do list bot for the **Bale** messenger (Telegram-compatible Bot API at `https://tapi.bale.ai`). One pinned message is the whole UI; menus are swapped in place with `editMessageText`.
 
-**Features:** per-group lists (and a personal list in private chat) · send + pin, then `editMessageText` the same message (re-send and re-pin if the edit fails) · inline toggle buttons (compact numbered rows of 5 for long lists) + refresh · progress bar and Tehran-time (Jalali) "last updated" · import an existing list by replying with `/import` (numbered, bulleted, ✅/☑/▫ markers; ✅ lines import as done) · Persian digits and slash-less Persian aliases (`انجام شد 3`, `اضافه …`, `حذف 3`, `لیست`) · 🎉 when everything is done · `/lock` so only group admins or the list creator can modify.
+**Features**
+- Toggle buttons per task (short text for ≤ 8 tasks, compact numbered rows of 5 otherwise) + `➕ Add | ⏰ Reminders | ⚙️ More`
+- ➕ Add uses a ForceReply prompt (one task per line); prompt and reply are deleted afterwards when the bot is admin
+- ⚙️ More: edit, delete, assign (👤 members who interacted, or `@username` in the text), due date (📅 presets or Persian natural input, Jalali), clear done, lock, title, weekly stats, new list, quiet hours
+- Short-lived ↩️ undo (whole-list snapshot)
+- "📋 Convert to list" offer when a list-looking message mentions/replies to the bot
+- Reminders: daily / Sat–Wed at preset or custom times, one-time, per-task due reminders (1 h before + at due), turn all off; Tehran time
+- Each reminder posts a summary in the group (assignees mentioned, members without personal reminders listed at most once a day) and DMs every member who started the bot (deep link `https://ble.ir/<bot>?start=g<chat_id>`) with their tasks and ✅ buttons that update the group list
+- 🌙 Quiet hours, toggleable per group and per user (default on, 23:00–07:00, presets). Group quiet postpones reminders to the window's end; user quiet postpones that user's DMs
+- Scheduler thread inside the polling process; state in SQLite with claim rows (compare-and-set on `next_at`, `due_sent` keys, outbox claims) → survives restarts, no duplicate sends; reminders more than 1 h late after downtime are skipped
+- Personal list in private chat; Persian digits; slash commands kept as power-user shortcuts (their acks auto-delete after 10 s in groups)
 
-**Stack:** Python 3, raw `requests`, long polling (`getUpdates`), SQLite.
+**Stack:** Python 3, raw `requests`, long polling, SQLite.
 
 ### Run
 ```bash
@@ -52,14 +54,14 @@ export TODO_BALE_BOT_TOKEN=...      # from @BotFather in Bale; never commit it
 ./stop.sh
 venv/bin/python -m unittest discover -s tests   # tests (fake API, no network)
 ```
-Optional `.env` (git-ignored): `TODO_STRIKE=unicode` draws done tasks with a Unicode strikethrough (Bale Markdown has no documented strikethrough, so the default is just ✅).
+Optional `.env` (git-ignored): `TODO_STRIKE=unicode` (Unicode strikethrough for done tasks; Bale Markdown has none), `TODO_TICK_SECONDS=20`.
 
-### Bale notes
-- Bale always renders Markdown (no `parse_mode`); user text is escaped.
-- Admin check uses `getChatMember`, falling back to `getChatAdministrators`.
-- Pinning needs the bot to be a group admin; without it, the bot says so (at most every 6 h) and works unpinned.
+### Bale notes (observed)
+- Always Markdown (no `parse_mode`); user text is escaped. Group chat ids are positive.
+- `editMessageText`, `pinChatMessage`, `setMyCommands`, `getChat` work. `getChatMember`/`getChatAdministrators` returned `403 permission_denied` for this bot, so locked lists fall back to "list creator + whoever locked it".
+- Bots receive normal (non-command) group messages when they are admin.
 
 ### Files
-`bot.py` polling loop · `app.py` logic · `parse.py` commands/aliases/import · `render.py` text + keyboard · `db.py` SQLite · `api.py` HTTP client · `tests/`.
+`bot.py` polling + scheduler thread · `app.py` logic · `render.py` text + keyboards · `dates.py` Jalali / natural dates / quiet hours · `parse.py` commands, aliases, import · `db.py` SQLite + migrations · `api.py` HTTP client · `tests/`
 
 License: MIT

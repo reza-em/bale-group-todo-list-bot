@@ -1,5 +1,5 @@
 """Bale group to-do list bot - long polling entry point. Token: env TODO_BALE_BOT_TOKEN (never logged)."""
-import os, sys, time, fcntl, logging
+import os, sys, time, fcntl, logging, threading
 import db
 from api import BaleApi, ApiError, NetError
 from app import TodoBot
@@ -15,7 +15,8 @@ COMMANDS = [
     ("done", "تیک زدن: /done 1 3"), ("undo", "برداشتن تیک"), ("del", "حذف کار"), ("edit", "ویرایش: /edit 2 متن"),
     ("import", "ریپلای روی یک لیست آماده"), ("title", "تغییر عنوان"), ("clear_done", "حذف انجام‌شده‌ها"),
     ("reset", "پاک کردن کل لیست"), ("lock", "فقط ادمین‌ها تغییر دهند"), ("unlock", "باز کردن قفل"),
-    ("help", "راهنما"),
+    ("due", "موعد: /due 2 فردا 18"), ("remind", "تنظیم یادآور"), ("stats", "آمار هفته"),
+    ("settings", "تنظیمات"), ("help", "راهنما"),
 ]
 
 
@@ -28,6 +29,39 @@ def single_instance():
         sys.exit(0)
     fd.seek(0); fd.truncate(); fd.write(str(os.getpid())); fd.flush()
     return fd
+
+
+TICK = int(os.environ.get("TODO_TICK_SECONDS", "20"))
+
+
+def scheduler(bot):
+    """Reminders, DM outbox, delayed deletes. State lives in SQLite (claims), so restarts never double-send."""
+    db.connect()
+    while True:
+        try:
+            bot.tick()
+        except Exception:
+            log.exception("scheduler tick failed")
+        time.sleep(TICK)
+
+
+UI_VERSION = "2"
+
+
+def upgrade_ui(bot, api):
+    """After an update that changes the keyboard, re-render existing list messages ONCE (edit only, never a new
+    message or pin, so nobody gets a notification)."""
+    if db.kv_get("ui_version") == UI_VERSION:
+        return
+    for lst in db.q("SELECT * FROM lists WHERE active=1 AND message_id IS NOT NULL"):
+        text, tasks = bot._render(lst)
+        try:
+            api.call("editMessageText", chat_id=lst["chat_id"], message_id=lst["message_id"], text=text,
+                     reply_markup=__import__("render").kb_main(lst, tasks))
+            log.info("list %s re-rendered with the new UI", lst["id"])
+        except (ApiError, NetError) as e:
+            log.info("list %s not re-rendered: %s", lst["id"], e)
+    db.kv_set("ui_version", UI_VERSION)
 
 
 def main():
@@ -49,7 +83,9 @@ def main():
         log.info("setMyCommands ok")
     except (ApiError, NetError) as e:
         log.info("setMyCommands not supported: %s", e)
-    log.info("todo bot started as @%s (pid %s)", me.get("username"), os.getpid())
+    upgrade_ui(bot, api)
+    threading.Thread(target=scheduler, args=(bot,), name="scheduler", daemon=True).start()
+    log.info("todo bot started as @%s (pid %s), scheduler every %ss", me.get("username"), os.getpid(), TICK)
     offset = None
     while True:
         try:

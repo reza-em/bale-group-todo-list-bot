@@ -78,3 +78,19 @@ class TestImport(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMeta(unittest.TestCase):
+    def test_extract(self):
+        from parse import extract_meta, looks_like_list, mentions
+        self.assertEqual(extract_meta("خرید نان @ali | فردا ۱۸"), ("خرید نان", "ali", "فردا ۱۸"))
+        self.assertEqual(extract_meta("تماس با @sara_k"), ("تماس با", "sara_k", None))
+        self.assertEqual(extract_meta("ایمیل a@b.com"), ("ایمیل a@b.com", None, None))
+        self.assertTrue(looks_like_list("1. a\n2. b"))
+        self.assertFalse(looks_like_list("سلام\nخوبی"))
+        self.assertTrue(mentions("hi @Reminds_Bot", "reminds_bot"))
+
+    def test_new_aliases(self):
+        self.assertEqual(parse_command("/due 3 فردا"), ("due", "3 فردا"))
+        self.assertEqual(parse_command("یادآور"), ("remind", ""))
+        self.assertEqual(parse_command("آمار"), ("stats", ""))

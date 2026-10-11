@@ -33,6 +33,7 @@ SLASH = {
     "done": "done", "undo": "undo", "del": "del", "delete": "del", "rm": "del",
     "edit": "edit", "clear_done": "clear_done", "cleardone": "clear_done",
     "reset": "reset", "title": "title", "lock": "lock", "unlock": "unlock",
+    "due": "due", "stats": "stats", "remind": "remind", "reminder": "remind", "settings": "settings",
 }
 # Persian aliases (no slash). (regex on normalised text, canonical, needs-argument)
 # "needs" = "num": must be followed by numbers; "text": must be followed by text; None: must be the whole message.
@@ -51,6 +52,10 @@ FA_ALIASES = [
     (r"قفل", "lock", None),
     (r"باز کردن قفل|آزاد", "unlock", None),
     (r"راهنما|کمک", "help", None),
+    (r"موعد", "due", "text"),
+    (r"آمار", "stats", None),
+    (r"یادآور|یادآوری", "remind", None),
+    (r"تنظیمات", "settings", None),
 ]
 _FA_RE = [(re.compile(r"^(?:%s)(?=$|[\s:،,0-9])[\s:،,]*" % pat), cmd, need) for pat, cmd, need in FA_ALIASES]
 _SLASH_RE = re.compile(r"^/([A-Za-z_]+)(?:@([A-Za-z0-9_]+))?(?=$|\s)[ \t]*")
@@ -194,3 +199,37 @@ def parse_add_lines(arg):
         if t:
             out.append(t[:300])
     return out
+
+
+# --- task meta: "@user" assignee and "| due" suffix --------------------------------------
+_MENTION = re.compile(r"(?<![\w@])@([A-Za-z][A-Za-z0-9_]{2,31})\b")
+
+
+def extract_meta(line):
+    """'خرید نان @ali | فردا ۱۸' -> ('خرید نان', 'ali', 'فردا ۱۸'). Due needs an explicit '|' or '⏰' separator."""
+    text, due = line, None
+    for sep in ("|", "⏰", "｜"):
+        if sep in text:
+            text, due = text.split(sep, 1)
+            due = due.strip() or None
+            break
+    username = None
+    m = _MENTION.search(text)
+    if m:
+        username = m.group(1)
+        text = (text[:m.start()] + text[m.end():])
+    text = re.sub(r"\s{2,}", " ", text).strip(" -،,")
+    return text, username, due
+
+
+def looks_like_list(text):
+    """≥2 lines that carry list markers (numbers, bullets, checkboxes)."""
+    marked = 0
+    for raw in (text or "").splitlines():
+        if raw.strip() and _strip_marks(raw)[2]:
+            marked += 1
+    return marked >= 2
+
+
+def mentions(text, username):
+    return bool(username) and ("@" + username.lower()) in (text or "").lower()
